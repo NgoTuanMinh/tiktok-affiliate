@@ -3,7 +3,8 @@ import google.generativeai as genai
 from config import GEMINI_API_KEY
 
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+# Use a currently-available model name (see `genai.list_models()`).
+model = genai.GenerativeModel("gemini-2.0-flash")
 
 STORYTELLING_PROMPT = """
 Bạn là một người kể chuyện chuyên nghiệp trên TikTok, có giọng kể cuốn hút và bí ẩn.

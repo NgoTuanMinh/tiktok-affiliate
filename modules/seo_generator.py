@@ -4,7 +4,8 @@ import json
 from config import GEMINI_API_KEY, DEFAULT_HASHTAGS
 
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+# Use a currently-available model name (see `genai.list_models()`).
+model = genai.GenerativeModel("gemini-2.0-flash")
 
 def generate_hashtags(script: str, title: str) -> str:
     """Sinh 20-30 hashtags từ kịch bản"""

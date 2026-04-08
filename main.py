@@ -4,6 +4,13 @@ import os
 import sys
 from datetime import datetime
 
+# Fix Unicode output on some Windows consoles (emoji, Vietnamese).
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 # Thêm thư mục hiện tại vào path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 

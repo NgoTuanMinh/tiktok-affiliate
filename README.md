@@ -167,3 +167,4 @@ Sau 72 giờ, giữ lại variant có hiệu suất tốt nhất.
 - Rà caption + gắn link: 2-3 phút
 - Upload thủ công TikTok: 2-3 phút
 - Tổng: khoảng 10 phút/ngày
+

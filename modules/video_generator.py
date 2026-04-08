@@ -1,7 +1,14 @@
 # modules/video_generator.py
 import asyncio
 import edge_tts
-from moviepy.editor import *
+from moviepy import (
+    AudioFileClip,
+    CompositeAudioClip,
+    CompositeVideoClip,
+    ImageClip,
+    TextClip,
+    VideoClip,
+)
 import requests
 import random
 import os
@@ -53,9 +60,39 @@ async def text_to_speech(text: str, output_path: str, voice: str = "vi-VN-HoaiMy
         except Exception as e:
             print(f"⚠️ ElevenLabs TTS lỗi, fallback EdgeTTS: {e}")
 
-    communicate = edge_tts.Communicate(text, voice)
-    await communicate.save(output_path)
-    return output_path
+    voices_to_try = []
+    if voice:
+        voices_to_try.append(voice)
+    # Fallback voices that usually exist on Edge TTS
+    for v in ["vi-VN-HoaiMyNeural", "vi-VN-NamMinhNeural"]:
+        if v not in voices_to_try:
+            voices_to_try.append(v)
+
+    last_err = None
+    for v in voices_to_try:
+        try:
+            communicate = edge_tts.Communicate(text, v)
+            await communicate.save(output_path)
+            return output_path
+        except Exception as e:
+            last_err = e
+
+    # Final fallback: generate a silent track so the pipeline can still render a video.
+    try:
+        import numpy as np
+        from moviepy.audio.AudioClip import AudioArrayClip
+
+        # Rough estimate: ~2.5 words/sec, clamp to 12–60s.
+        word_count = max(1, len(text.split()))
+        duration = max(12.0, min(60.0, word_count / 2.5))
+        sr = 44100
+        samples = int(duration * sr)
+        silent = np.zeros((samples, 2), dtype=np.float32)
+        AudioArrayClip(silent, fps=sr).write_audiofile(output_path, fps=sr, nbytes=2, bitrate="192k", logger=None)
+        print(f"⚠️ EdgeTTS lỗi ({last_err}); đã tạo audio im lặng {duration:.1f}s để tiếp tục pipeline.")
+        return output_path
+    except Exception as e:
+        raise RuntimeError(f"EdgeTTS failed and silent fallback failed: {last_err} / {e}")
 
 def get_background_image(keyword: str = None) -> str:
     """Tải ảnh nền từ Pexels, nếu lỗi thì dùng ảnh đen"""
@@ -107,15 +144,14 @@ def add_subtitles(clip, text: str, duration: float) -> CompositeVideoClip:
         
         sentence_duration = len(sentence) * char_time
         txt_clip = TextClip(
-            sentence.strip(),
-            fontsize=45,
-            color='white',
-            font='Arial',
-            stroke_color='black',
+            text=sentence.strip(),
+            font_size=45,
+            color="white",
+            stroke_color="black",
             stroke_width=2,
-            method='caption',
-            size=(VIDEO_WIDTH - 80, None)
-        ).set_position(('center', VIDEO_HEIGHT - 150)).set_start(current_time).set_duration(sentence_duration)
+            method="caption",
+            size=(VIDEO_WIDTH - 80, None),
+        ).with_position(("center", VIDEO_HEIGHT - 150)).with_start(current_time).with_duration(sentence_duration)
         
         subtitle_clips.append(txt_clip)
         current_time += sentence_duration
@@ -142,7 +178,7 @@ async def create_video(script: str, output_path: str) -> str:
     duration = audio_clip.duration
     
     bg_img_path = get_background_image()
-    bg_clip = ImageClip(bg_img_path).resize((VIDEO_WIDTH, VIDEO_HEIGHT)).set_duration(duration)
+    bg_clip = ImageClip(bg_img_path).resized(new_size=(VIDEO_WIDTH, VIDEO_HEIGHT)).with_duration(duration)
     
     # Hiệu ứng zoom nhẹ
     def make_frame(t):
@@ -166,11 +202,22 @@ async def create_video(script: str, output_path: str) -> str:
     avatar_path = get_avatar_path()
     if avatar_path:
         print("   👤 Đang thêm avatar...")
-        avatar = (ImageClip(avatar_path)
-                  .resize(height=250)
-                  .set_position((20, VIDEO_HEIGHT - 300))
-                  .set_duration(duration))
-        final_clip = CompositeVideoClip([bg_zoomed, avatar])
+        try:
+            # Avoid imageio backend issues by loading via Pillow.
+            from PIL import Image
+            import numpy as np
+
+            avatar_img = np.array(Image.open(avatar_path).convert("RGBA"))
+            avatar = (
+                ImageClip(avatar_img)
+                .resized(height=250)
+                .with_position((20, VIDEO_HEIGHT - 300))
+                .with_duration(duration)
+            )
+            final_clip = CompositeVideoClip([bg_zoomed, avatar])
+        except Exception as e:
+            print(f"⚠️ Không thể load avatar ({e}), bỏ qua avatar.")
+            final_clip = bg_zoomed
     else:
         final_clip = bg_zoomed
     
@@ -183,16 +230,21 @@ async def create_video(script: str, output_path: str) -> str:
         # Thêm nhạc nền (nếu có)
         music_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "background_music", "mystery.mp3")
         if os.path.exists(music_path):
-            music = AudioFileClip(music_path).volumex(0.25)
-            music_duration = min(duration, music.duration)
-            if music_duration > 0:
-                music = music.subclip(0, music_duration)
-                final_audio = CompositeAudioClip([audio_clip, music.set_duration(duration)])
-                final_clip = final_clip.set_audio(final_audio)
-            else:
-                final_clip = final_clip.set_audio(audio_clip)
+            try:
+                music = AudioFileClip(music_path).with_volume_scaled(0.25)
+                music_duration = min(duration, music.duration)
+                if music_duration > 0:
+                    music = music.subclipped(0, music_duration)
+                    final_audio = CompositeAudioClip([audio_clip, music.with_duration(duration)])
+                    final_clip = final_clip.with_audio(final_audio)
+                else:
+                    final_clip = final_clip.with_audio(audio_clip)
+            except Exception as e:
+                print(f"⚠️ Không đọc được nhạc nền ({e}), bỏ qua nhạc nền.")
+                music = None
+                final_clip = final_clip.with_audio(audio_clip)
         else:
-            final_clip = final_clip.set_audio(audio_clip)
+            final_clip = final_clip.with_audio(audio_clip)
 
         # Xuất video
         print("   💾 Đang xuất video (có thể mất 1-2 phút)...")
@@ -202,7 +254,8 @@ async def create_video(script: str, output_path: str) -> str:
             codec='libx264',
             audio_codec='aac',
             threads=4,
-            logger=None
+            preset="ultrafast",
+            logger="bar",
         )
         return output_path
     finally:
