@@ -8,8 +8,18 @@ load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
 
+# Gemini (google-genai SDK) — một request gộp trong genai_pack
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip()
+GEMINI_MAX_RETRIES = int(os.getenv("GEMINI_MAX_RETRIES", "5"))
+GEMINI_CACHE_ENABLED = os.getenv("GEMINI_CACHE", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
 # Paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+GEMINI_CACHE_DIR = os.path.join(BASE_DIR, ".cache", "gemini")
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 OUTPUT_DIR = os.path.join(BASE_DIR, "output")
 FONTS_DIR = os.path.join(ASSETS_DIR, "fonts")

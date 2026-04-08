@@ -19,6 +19,7 @@ env/
 # Outputs & logs (generated)
 output/
 logs/
+.cache/
 
 # OS/editor
 .DS_Store

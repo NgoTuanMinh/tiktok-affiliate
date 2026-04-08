@@ -50,32 +50,41 @@ def _elevenlabs_tts(text: str, output_path: str) -> str:
 
 async def text_to_speech(text: str, output_path: str, voice: str = "vi-VN-HoaiMyNeural"):
     """
-    TTS ưu tiên ElevenLabs (giọng hay hơn) nếu có cấu hình.
-    Fallback: EdgeTTS (miễn phí).
+    ElevenLabs: chỉ khi TTS_PROVIDER=elevenlabs (hoặc 11labs) VÀ có API key + voice_id.
+    Tránh gọi ElevenLabs khi để trống key → lỗi 402 spam log.
+    Fallback: Edge TTS (có retry).
     """
     provider = os.getenv("TTS_PROVIDER", "").strip().lower()
-    if provider in {"elevenlabs", "11labs"} or os.getenv("ELEVENLABS_API_KEY"):
+    el_key = os.getenv("ELEVENLABS_API_KEY", "").strip()
+    el_voice = os.getenv("ELEVENLABS_VOICE_ID", "").strip()
+    use_elevenlabs = provider in {"elevenlabs", "11labs"} and el_key and el_voice
+
+    if use_elevenlabs:
         try:
             return _elevenlabs_tts(text, output_path)
         except Exception as e:
-            print(f"⚠️ ElevenLabs TTS lỗi, fallback EdgeTTS: {e}")
+            print(f"⚠️ ElevenLabs lỗi ({e}), chuyển sang Edge TTS...")
 
     voices_to_try = []
     if voice:
         voices_to_try.append(voice)
-    # Fallback voices that usually exist on Edge TTS
     for v in ["vi-VN-HoaiMyNeural", "vi-VN-NamMinhNeural"]:
         if v not in voices_to_try:
             voices_to_try.append(v)
 
     last_err = None
     for v in voices_to_try:
-        try:
-            communicate = edge_tts.Communicate(text, v)
-            await communicate.save(output_path)
-            return output_path
-        except Exception as e:
-            last_err = e
+        for attempt in range(3):
+            try:
+                communicate = edge_tts.Communicate(text, v)
+                await communicate.save(output_path)
+                return output_path
+            except Exception as e:
+                last_err = e
+                if attempt < 2:
+                    wait = 1.5 * (attempt + 1) + random.uniform(0, 0.8)
+                    print(f"⚠️ Edge TTS lỗi ({e}), thử lại sau {wait:.1f}s (voice={v})...")
+                    await asyncio.sleep(wait)
 
     # Final fallback: generate a silent track so the pipeline can still render a video.
     try:
@@ -158,12 +167,29 @@ def add_subtitles(clip, text: str, duration: float) -> CompositeVideoClip:
     
     return CompositeVideoClip([clip] + subtitle_clips)
 
+def _is_valid_image_file(path: str) -> bool:
+    try:
+        from PIL import Image
+
+        with Image.open(path) as im:
+            im.load()
+        return True
+    except Exception:
+        return False
+
+
 def get_avatar_path() -> str:
-    """Lấy đường dẫn avatar ngẫu nhiên (nếu có)"""
-    if os.path.exists(AVATAR_DIR):
-        avatars = [f for f in os.listdir(AVATAR_DIR) if f.endswith(('.png', '.jpg', '.jpeg'))]
-        if avatars:
-            return os.path.join(AVATAR_DIR, random.choice(avatars))
+    """Lấy đường dẫn avatar ngẫu nhiên (bỏ qua file placeholder / không phải ảnh hợp lệ)."""
+    if not os.path.isdir(AVATAR_DIR):
+        return None
+    names = [
+        f
+        for f in os.listdir(AVATAR_DIR)
+        if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
+    ]
+    valid = [f for f in names if _is_valid_image_file(os.path.join(AVATAR_DIR, f))]
+    if valid:
+        return os.path.join(AVATAR_DIR, random.choice(valid))
     return None
 
 async def create_video(script: str, output_path: str) -> str:
@@ -229,7 +255,7 @@ async def create_video(script: str, output_path: str) -> str:
 
         # Thêm nhạc nền (nếu có)
         music_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "background_music", "mystery.mp3")
-        if os.path.exists(music_path):
+        if os.path.isfile(music_path) and os.path.getsize(music_path) > 512:
             try:
                 music = AudioFileClip(music_path).with_volume_scaled(0.25)
                 music_duration = min(duration, music.duration)

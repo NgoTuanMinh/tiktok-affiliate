@@ -25,13 +25,18 @@ pip install -r requirements.txt
 GEMINI_API_KEY=your_key_here
 PEXELS_API_KEY=your_pexels_key_here
 
-# TTS (tuỳ chọn): ElevenLabs giọng hay hơn
-# Nếu không set, hệ thống sẽ fallback Edge TTS (miễn phí)
-TTS_PROVIDER=elevenlabs
-ELEVENLABS_API_KEY=your_key_here
-ELEVENLABS_VOICE_ID=your_voice_id_here
+# Gemini: dùng SDK google-genai (không dùng google-generativeai)
+GEMINI_MODEL=gemini-2.0-flash
+GEMINI_CACHE=true
+GEMINI_MAX_RETRIES=5
 
-# Optional tinh chỉnh chất giọng
+# TTS: để trống TTS_PROVIDER = chỉ Edge TTS (miễn phí).
+# Chỉ bật ElevenLabs khi đã có credit (tránh lỗi 402).
+TTS_PROVIDER=
+ELEVENLABS_API_KEY=
+ELEVENLABS_VOICE_ID=
+
+# Optional ElevenLabs
 ELEVENLABS_MODEL_ID=eleven_multilingual_v2
 ELEVENLABS_STABILITY=0.5
 ELEVENLABS_SIMILARITY_BOOST=0.75
@@ -40,6 +45,8 @@ ELEVENLABS_SPEAKER_BOOST=true
 ```
 
 Ghi chú: **không cần** để link affiliate trong `.env`. Pipeline sẽ xuất video trước, sau đó bạn tự chọn link phù hợp và dán vào `caption_affiliate.txt`/caption khi đăng.
+
+**Giảm lỗi 429 (quota Gemini):** script + hashtags + metadata + caption + A/B được gộp **một request** trong `modules/genai_pack.py`, kèm **retry/backoff** và **cache** tại `.cache/gemini/`.
 
 ### Bước 3 (tùy chọn): Chuẩn bị assets
 
@@ -63,10 +70,9 @@ Sau khi chạy xong, mở thư mục `output/` và chọn folder mới nhất.
 
 1. Scrape story (Reddit + fallback)
 2. Chọn offer affiliate phù hợp trước
-3. Sinh script có CTA affiliate tự nhiên
-4. Sinh SEO (hashtags, caption affiliate, A/B test pack)
-5. Render video faceless
-6. Xuất package để bạn đăng tay
+3. **Một lần gọi Gemini** (`google-genai`): script + hashtags + YouTube metadata + caption affiliate + A/B pack (có retry 429/503 và cache `.cache/gemini/`)
+4. Render video faceless (TTS: ElevenLabs nếu bật đủ điều kiện, không thì Edge TTS + retry)
+5. Xuất package để bạn đăng tay
 
 ## 4) File output quan trọng
 
@@ -167,4 +173,3 @@ Sau 72 giờ, giữ lại variant có hiệu suất tốt nhất.
 - Rà caption + gắn link: 2-3 phút
 - Upload thủ công TikTok: 2-3 phút
 - Tổng: khoảng 10 phút/ngày
-
