@@ -1,0 +1,33 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.python-version
+
+# Virtual envs
+venv/
+.venv/
+env/
+.envrc
+
+# Outputs & logs (generated)
+output/
+logs/
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+
+# Temp files created by pipeline/render
+temp_video.mp4
+temp_voice.mp3
+temp_bg_*.jpg
+temp_bg_fallback.jpg
+
